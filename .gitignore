@@ -1,0 +1,11 @@
+# 绝对不能传的敏感信息
+.env
+
+# 绝对不传的本地大文件/数据库
+chroma_db/
+*.pkl
+*.pth
+
+# 忽略 Python 缓存
+__pycache__/
+*.pyc
