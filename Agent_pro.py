@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import chromadb
 from chromadb.utils import embedding_functions
-
+import glob
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 load_dotenv()
 
 # ==========================================
@@ -26,12 +27,36 @@ st.caption("具备多轮记忆 + 连续工具调用的完整智能体")
 
 @st.cache_resource
 def init_resources():
-    client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
+    client = OpenAI(
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        base_url="https://api.deepseek.com",
+    )
     embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-small-zh-v1.5")
     chroma_client = chromadb.PersistentClient(path="./chroma_db")
-    collection = chroma_client.get_collection(name="courses", embedding_function=embedding_fn)
-    return client, collection
 
+    # 换成 get_or_create_collection
+    collection = chroma_client.get_or_create_collection(name="courses", embedding_function=embedding_fn)
+
+    # 【核心补丁】：如果是空的，就在云端现场建库
+    if collection.count() == 0:
+        st.info("首次运行：正在读取 knowledge_base 并建立向量数据库，请稍候...")
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, length_function=len)
+        documents, metadatas, ids = [], [], []
+
+        for file_path in glob.glob("knowledge_base/*.md"):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            file_name = os.path.basename(file_path)
+            for i, chunk in enumerate(text_splitter.split_text(content)):
+                documents.append(chunk)
+                metadatas.append({"file": file_name})
+                ids.append(f"{file_name}-{i}")
+
+        if documents:
+            collection.add(documents=documents, metadatas=metadatas, ids=ids)
+            st.success(f"✅ 知识库建立成功！共存入 {len(documents)} 个知识块。")
+
+    return client, collection
 
 client, collection = init_resources()
 
